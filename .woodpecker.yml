@@ -1,0 +1,32 @@
+# Provider (Woodpecker CI) — build and test pipeline.
+steps:
+  build-test:
+    image: golang:1.23
+    environment:
+      - GOFLAGS=-mod=mod
+      - GOPROXY=https://proxy.golang.org,direct
+    commands:
+      - go build -v ./...
+      - go vet ./...
+      - ./pipelines/install_golangci-lint.sh
+      - ./bin/golangci-lint run ./...
+      - go test -v -coverprofile=coverage.txt ./...
+
+  release:
+    image: golang:1.23
+    # Secrets come from Woodpecker's secret store via `from_secret`; they are
+    # never written to the repo. Add them with:
+    #   woodpecker-cli secret add --repository <repo> --name gpg_private_key --value @key.asc
+    environment:
+      GPG_PRIVATE_KEY:
+        from_secret: gpg_private_key
+      GPG_PASSPHRASE:
+        from_secret: gpg_passphrase
+      GITHUB_TOKEN:
+        from_secret: github_token
+    commands:
+      - printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
+      - export GPG_FINGERPRINT=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')
+      - curl -sSfL https://goreleaser.com/static/run | bash -s -- release --clean
+    when:
+      event: tag

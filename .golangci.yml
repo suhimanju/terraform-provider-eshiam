@@ -1,0 +1,21 @@
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - gofmt
+    - govet
+    - ineffassign
+    - staticcheck
+    - unconvert
+    - unparam
+  disable:
+    # errcheck is intentionally disabled to match the framework's convention of
+    # not adding unused error checks around SDK diagnostics.
+    - errcheck
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - unparam

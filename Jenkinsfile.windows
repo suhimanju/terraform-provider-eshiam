@@ -1,0 +1,157 @@
+// Jenkins declarative pipeline for a WINDOWS agent (PowerShell).
+// Use this instead of the root `Jenkinsfile` when your Jenkins agent runs on
+// Windows. It mirrors the same stages but uses `powershell` steps and Windows
+// paths. Secrets are bound only inside `withCredentials`, masked in logs, and
+// removed when the block exits.
+pipeline {
+    // Target a Windows agent, e.g. one labelled "windows".
+    agent { label 'windows' }
+
+    environment {
+        GO_VERSION = '1.23.3'
+        GOFLAGS    = '-mod=mod'
+        GOPROXY    = 'https://proxy.golang.org,direct'
+        // Keep Go's caches inside the workspace so they are cleaned per-run.
+        GOPATH     = "${WORKSPACE}\\.go"
+        GOBIN      = "${WORKSPACE}\\.go\\bin"
+    }
+
+    options {
+        timestamps()
+        timeout(time: 60, unit: 'MINUTES')
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Setup Go') {
+            steps {
+                // Install Go into the workspace if the agent doesn't already have it.
+                powershell '''
+                    $ErrorActionPreference = "Stop"
+                    if (Get-Command go -ErrorAction SilentlyContinue) {
+                        go version
+                    } else {
+                        $url = "https://go.dev/dl/go$env:GO_VERSION.windows-amd64.zip"
+                        $zip = Join-Path $env:TEMP "go.zip"
+                        Write-Host "Downloading $url"
+                        Invoke-WebRequest -Uri $url -OutFile $zip
+                        $dest = Join-Path $env:WORKSPACE "go-sdk"
+                        if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
+                        Expand-Archive -Path $zip -DestinationPath $dest -Force
+                        $env:PATH = "$dest\\go\\bin;$env:PATH"
+                        go version
+                    }
+                    New-Item -ItemType Directory -Force -Path $env:GOBIN | Out-Null
+                '''
+            }
+        }
+
+        stage('Build') {
+            steps {
+                powershell '''
+                    $ErrorActionPreference = "Stop"
+                    $env:PATH = "$env:WORKSPACE\\go-sdk\\go\\bin;$env:GOBIN;$env:PATH"
+                    go build -v ./...
+                '''
+            }
+        }
+
+        stage('Vet') {
+            steps {
+                powershell '''
+                    $ErrorActionPreference = "Stop"
+                    $env:PATH = "$env:WORKSPACE\\go-sdk\\go\\bin;$env:GOBIN;$env:PATH"
+                    go vet ./...
+                '''
+            }
+        }
+
+        stage('Lint') {
+            steps {
+                powershell '''
+                    $ErrorActionPreference = "Stop"
+                    $env:PATH = "$env:WORKSPACE\\go-sdk\\go\\bin;$env:GOBIN;$env:PATH"
+                    go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+                    & "$env:GOBIN\\golangci-lint.exe" run ./...
+                '''
+            }
+        }
+
+        stage('Test') {
+            steps {
+                powershell '''
+                    $ErrorActionPreference = "Stop"
+                    $env:PATH = "$env:WORKSPACE\\go-sdk\\go\\bin;$env:GOBIN;$env:PATH"
+                    go install github.com/jstemmer/go-junit-report/v2@latest
+                    go test -v -coverprofile=coverage.txt ./... | Tee-Object -FilePath test_output.txt
+                    Get-Content test_output.txt | & "$env:GOBIN\\go-junit-report.exe" > report.xml
+                '''
+            }
+            post {
+                always {
+                    junit allowEmptyResults: true, testResults: 'report.xml'
+                    archiveArtifacts artifacts: 'coverage.txt', allowEmptyArchive: true
+                }
+            }
+        }
+
+        // Optional: integration tests against a live tenant.
+        // Secrets are bound only inside `withCredentials`, masked in logs, and
+        // removed from the environment when the block exits. Store them in
+        // Jenkins Credentials Manager as Secret Text: "example-host",
+        // "example-client-id", "example-client-secret".
+        //
+        // stage('Integration Tests') {
+        //     when { branch 'main' }
+        //     steps {
+        //         withCredentials([
+        //             string(credentialsId: 'example-host',          variable: 'EXAMPLE_HOST'),
+        //             string(credentialsId: 'example-client-id',     variable: 'EXAMPLE_CLIENT_ID'),
+        //             string(credentialsId: 'example-client-secret', variable: 'EXAMPLE_CLIENT_SECRET'),
+        //         ]) {
+        //             powershell '''
+        //                 $ErrorActionPreference = "Stop"
+        //                 $env:PATH = "$env:WORKSPACE\\go-sdk\\go\\bin;$env:GOBIN;$env:PATH"
+        //                 $env:TF_ACC = "1"
+        //                 go test -tags=integration -timeout 120m ./internal/...
+        //             '''
+        //         }
+        //     }
+        // }
+
+        stage('Release') {
+            when { tag 'v*' }
+            steps {
+                // Bind secrets only for this block. The GPG key is provided as a
+                // *file* credential (its contents never touch an env var), and the
+                // passphrase/token are masked strings. All are wiped when the block
+                // ends. Store in Jenkins Credentials Manager:
+                //   - gpg-private-key : Secret file (ASCII-armored private key)
+                //   - gpg-passphrase  : Secret text
+                //   - github-token    : Secret text
+                withCredentials([
+                    file(credentialsId: 'gpg-private-key', variable: 'GPG_KEY_FILE'),
+                    string(credentialsId: 'gpg-passphrase', variable: 'GPG_PASSPHRASE'),
+                    string(credentialsId: 'github-token', variable: 'GITHUB_TOKEN'),
+                ]) {
+                    powershell '''
+                        $ErrorActionPreference = "Stop"
+                        $env:PATH = "$env:WORKSPACE\\go-sdk\\go\\bin;$env:GOBIN;$env:PATH"
+                        gpg --batch --import "$env:GPG_KEY_FILE"
+                        $env:GPG_FINGERPRINT = (gpg --list-secret-keys --with-colons |
+                            Select-String '^fpr:' | Select-Object -First 1).ToString().Split(':')[9]
+                        # Run GoReleaser (requires goreleaser to be installed on the agent,
+                        # e.g. `go install github.com/goreleaser/goreleaser/v2@latest`).
+                        go install github.com/goreleaser/goreleaser/v2@latest
+                        & "$env:GOBIN\\goreleaser.exe" release --clean
+                    '''
+                }
+            }
+        }
+    }
+}

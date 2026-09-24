@@ -1,0 +1,41 @@
+# Bitbucket Pipelines for building, testing, and releasing the provider.
+image: golang:1.23
+
+definitions:
+  caches:
+    gomod: /go/pkg/mod
+  steps:
+    - step: &build-test
+        name: Build & Test
+        caches:
+          - gomod
+        script:
+          - export GOFLAGS="-mod=mod"
+          - export GOPROXY="https://proxy.golang.org,direct"
+          - go build -v ./...
+          - go vet ./...
+          - ./pipelines/install_golangci-lint.sh
+          - ./bin/golangci-lint run ./...
+          - go test -v -coverprofile=coverage.txt ./...
+        artifacts:
+          - coverage.txt
+
+pipelines:
+  default:
+    - step: *build-test
+  branches:
+    main:
+      - step: *build-test
+  tags:
+    'v*':
+      - step: *build-test
+      - step:
+          name: Release
+          # GPG_PRIVATE_KEY, GPG_PASSPHRASE, and GITHUB_TOKEN are defined as
+          # *secured* repository or workspace variables (Repository settings >
+          # Repository variables, with "Secured" checked). They are masked in
+          # logs and never stored in this file.
+          script:
+            - printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
+            - export GPG_FINGERPRINT=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')
+            - curl -sSfL https://goreleaser.com/static/run | bash -s -- release --clean

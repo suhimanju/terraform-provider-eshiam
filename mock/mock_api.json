@@ -1,0 +1,90 @@
+{
+  "uuid": "00000000-0000-0000-0000-000000000000",
+  "lastMigration": 33,
+  "name": "Example Provider Mock",
+  "endpointPrefix": "",
+  "latency": 0,
+  "port": 3000,
+  "hostname": "",
+  "folders": [],
+  "routes": [
+    {
+      "uuid": "10000000-0000-0000-0000-000000000001",
+      "type": "http",
+      "documentation": "OAuth2 token endpoint",
+      "method": "post",
+      "endpoint": "oauth/token",
+      "responses": [
+        {
+          "uuid": "10000000-0000-0000-0000-000000000002",
+          "body": "{\n  \"access_token\": \"mock-access-token\",\n  \"token_type\": \"Bearer\",\n  \"expires_in\": 3600\n}",
+          "latency": 0,
+          "statusCode": 200,
+          "label": "Token issued",
+          "headers": [
+            { "key": "Content-Type", "value": "application/json" }
+          ],
+          "bodyType": "INLINE",
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id"
+        }
+      ],
+      "enabled": true,
+      "responseMode": null
+    },
+    {
+      "uuid": "20000000-0000-0000-0000-000000000001",
+      "type": "http",
+      "documentation": "Example collection — supports CRUD via data bucket",
+      "method": "get",
+      "endpoint": "v3/example-objects",
+      "responses": [
+        {
+          "uuid": "20000000-0000-0000-0000-000000000002",
+          "body": "[]",
+          "latency": 0,
+          "statusCode": 200,
+          "label": "List objects",
+          "headers": [
+            { "key": "Content-Type", "value": "application/json" }
+          ],
+          "bodyType": "INLINE",
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id"
+        }
+      ],
+      "enabled": true,
+      "responseMode": null
+    }
+  ],
+  "rootChildren": [
+    { "type": "route", "uuid": "10000000-0000-0000-0000-000000000001" },
+    { "type": "route", "uuid": "20000000-0000-0000-0000-000000000001" }
+  ],
+  "proxyMode": false,
+  "proxyHost": "",
+  "proxyRemovePrefix": false,
+  "tlsOptions": {
+    "enabled": false,
+    "type": "CERT",
+    "pfxPath": "",
+    "certPath": "",
+    "keyPath": "",
+    "caPath": "",
+    "passphrase": ""
+  },
+  "cors": true,
+  "headers": [],
+  "proxyReqHeaders": [],
+  "proxyResHeaders": [],
+  "data": [],
+  "callbacks": []
+}

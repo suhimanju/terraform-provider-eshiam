@@ -1,0 +1,68 @@
+version: 2.1
+
+orbs:
+  go: circleci/go@1.11
+
+jobs:
+  build-and-test:
+    docker:
+      - image: cimg/go:1.23
+    environment:
+      GOFLAGS: "-mod=mod"
+      GOPROXY: "https://proxy.golang.org,direct"
+    steps:
+      - checkout
+      - go/load-cache
+      - go/mod-download
+      - go/save-cache
+      - run:
+          name: Build
+          command: go build -v ./...
+      - run:
+          name: Vet
+          command: go vet ./...
+      - run:
+          name: Lint
+          command: |
+            ./pipelines/install_golangci-lint.sh
+            ./bin/golangci-lint run ./...
+      - run:
+          name: Test
+          command: |
+            go install github.com/jstemmer/go-junit-report/v2@latest
+            mkdir -p test-results
+            go test -v -coverprofile=coverage.txt ./... | tee test_output.txt
+            go-junit-report < test_output.txt > test-results/report.xml
+      - store_test_results:
+          path: test-results
+      - store_artifacts:
+          path: coverage.txt
+
+  release:
+    docker:
+      - image: cimg/go:1.23
+    steps:
+      - checkout
+      - run:
+          name: GoReleaser
+          # GPG_PRIVATE_KEY, GPG_PASSPHRASE, and GITHUB_TOKEN are provided by the
+          # "provider-release" context (Organization Settings > Contexts) — never
+          # stored in this file.
+          command: |
+            printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
+            export GPG_FINGERPRINT=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')
+            curl -sSfL https://goreleaser.com/static/run | bash -s -- release --clean
+
+workflows:
+  ci:
+    jobs:
+      - build-and-test
+      - release:
+          context: provider-release
+          requires:
+            - build-and-test
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^v.*/

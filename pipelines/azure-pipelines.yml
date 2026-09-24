@@ -1,0 +1,63 @@
+# Generic Azure DevOps pipeline for building and testing the provider.
+# Replace variable-group / service-connection references with your own.
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+parameters:
+  - name: goVersion
+    type: string
+    default: "1.23"
+
+steps:
+  - task: GoTool@0
+    displayName: "Use Go ${{ parameters.goVersion }}"
+    inputs:
+      version: "${{ parameters.goVersion }}"
+
+  - script: |
+      set -euxo pipefail
+      export GOBIN="$(go env GOPATH)/bin"
+      mkdir -p "$GOBIN"
+      echo "##vso[task.prependpath]$GOBIN"
+    displayName: "Create Go workspace"
+
+  - script: |
+      set -euxo pipefail
+      go build -v ./...
+    displayName: "Build"
+
+  - script: |
+      set -euxo pipefail
+      go install github.com/jstemmer/go-junit-report/v2@latest
+      go test -v -coverprofile=coverage.txt -covermode count ./... > test_results.txt
+      cat test_results.txt
+      go-junit-report < test_results.txt > report.xml
+    displayName: "Unit tests"
+
+  - task: PublishTestResults@2
+    displayName: "Publish test results"
+    inputs:
+      testRunner: JUnit
+      testResultsFiles: "$(System.DefaultWorkingDirectory)/**/report.xml"
+      failTaskOnFailedTests: true
+
+  # Optional: integration tests against a live tenant.
+  # Store EXAMPLE_HOST / EXAMPLE_CLIENT_ID / EXAMPLE_CLIENT_SECRET as *secret*
+  # variables in a Variable Group (Pipelines > Library) or link Azure Key Vault,
+  # then map them into the step's env below. Secret variables are NOT auto-mapped
+  # into scripts — you must map them explicitly, which keeps them out of logs.
+  #
+  # - script: |
+  #     set -euo pipefail
+  #     TF_ACC=1 go test -tags=integration -timeout 120m ./internal/...
+  #   displayName: "Integration tests"
+  #   condition: eq(variables['Build.SourceBranch'], 'refs/heads/main')
+  #   env:
+  #     EXAMPLE_HOST: $(EXAMPLE_HOST)
+  #     EXAMPLE_CLIENT_ID: $(EXAMPLE_CLIENT_ID)
+  #     EXAMPLE_CLIENT_SECRET: $(EXAMPLE_CLIENT_SECRET)

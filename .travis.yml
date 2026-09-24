@@ -1,0 +1,39 @@
+language: go
+go:
+  - "1.23"
+
+env:
+  global:
+    - GOFLAGS="-mod=mod"
+    - GOPROXY="https://proxy.golang.org,direct"
+
+cache:
+  directories:
+    - $HOME/.cache/go-build
+    - $GOPATH/pkg/mod
+
+install:
+  - go mod download
+  - ./pipelines/install_golangci-lint.sh
+
+script:
+  - go build -v ./...
+  - go vet ./...
+  - ./bin/golangci-lint run ./...
+  - go test -v -coverprofile=coverage.txt ./...
+
+after_success:
+  - go tool cover -func=coverage.txt | tail -n 1
+
+# GPG_PRIVATE_KEY, GPG_PASSPHRASE, and GITHUB_TOKEN must be defined as
+# encrypted repository settings (Travis: Settings > Environment Variables,
+# with "Display value in build log" OFF). Never place secrets in this file.
+deploy:
+  provider: script
+  script: >-
+    printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import &&
+    export GPG_FINGERPRINT=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}') &&
+    curl -sSfL https://goreleaser.com/static/run | bash -s -- release --clean
+  on:
+    tags: true
+    condition: $TRAVIS_TAG =~ ^v

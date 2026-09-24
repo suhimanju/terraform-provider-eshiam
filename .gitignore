@@ -1,0 +1,30 @@
+# Build artifacts
+terraform-provider-eshiam
+dist/
+bin/
+*.exe
+*.log
+
+# Go
+vendor/
+*.test
+*.out
+coverage.*
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+
+# Local provider dev overrides
+.terraformrc
+terraform.rc
+# ...but keep the checked-in example template
+!examples/provider-install-verification/.terraformrc
+
+# Editor
+.idea/
+.vscode/
+*.swp

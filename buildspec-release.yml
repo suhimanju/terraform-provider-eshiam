@@ -1,0 +1,30 @@
+# AWS CodeBuild release spec — builds signed artifacts via GoReleaser on tags.
+# Requires GPG_PRIVATE_KEY and GPG_PASSPHRASE in the CodeBuild environment
+# (recommended: AWS Secrets Manager references) and GITHUB_TOKEN for publishing.
+version: 0.2
+
+env:
+  variables:
+    GOFLAGS: "-mod=mod"
+    GOPROXY: "https://proxy.golang.org,direct"
+  secrets-manager:
+    GPG_PRIVATE_KEY: "provider/release:gpg_private_key"
+    GPG_PASSPHRASE: "provider/release:gpg_passphrase"
+    GITHUB_TOKEN: "provider/release:github_token"
+
+phases:
+  install:
+    runtime-versions:
+      golang: 1.23
+    commands:
+      - go version
+      - printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
+      - export GPG_FINGERPRINT=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')
+
+  build:
+    commands:
+      - curl -sSfL https://goreleaser.com/static/run | bash -s -- release --clean
+
+artifacts:
+  files:
+    - dist/**/*

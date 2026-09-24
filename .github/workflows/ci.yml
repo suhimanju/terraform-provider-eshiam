@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -v -coverprofile=coverage.txt ./...
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.txt
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout 10m
+
+  # Optional: integration tests against a live tenant.
+  # Credentials come from repository/environment secrets (Settings > Secrets and
+  # variables > Actions). Secrets are masked in logs and are NOT exposed to
+  # pull requests from forks, so this job only runs on pushes to main.
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Integration tests
+        env:
+          TF_ACC: "1"
+          EXAMPLE_HOST: ${{ secrets.EXAMPLE_HOST }}
+          EXAMPLE_CLIENT_ID: ${{ secrets.EXAMPLE_CLIENT_ID }}
+          EXAMPLE_CLIENT_SECRET: ${{ secrets.EXAMPLE_CLIENT_SECRET }}
+        run: go test -tags=integration -timeout 120m ./internal/...

@@ -1,0 +1,32 @@
+# Docker Compose for building and testing the Terraform provider.
+#
+# Usage:
+#   docker compose build                 # build the image
+#   docker compose run --rm build        # compile the provider binary
+#   docker compose run --rm test         # run unit tests
+#   docker compose run --rm extract      # copy the binary to ./dist on the host
+#
+# See docs/docker.md for the full guide, including how a linkage framework
+# consumes the built provider.
+services:
+  base: &base
+    build: .
+    image: terraform-provider-eshiam-build:latest
+    working_dir: /src
+    volumes:
+      - ./:/src
+
+  # Compile everything (fails the build on any compile error).
+  build:
+    <<: *base
+    command: ["go", "build", "-v", "./..."]
+
+  # Run the unit tests.
+  test:
+    <<: *base
+    command: ["go", "test", "./..."]
+
+  # Build the provider binary into ./dist on the host (mounted volume).
+  extract:
+    <<: *base
+    command: ["sh", "-lc", "mkdir -p /src/dist && go build -o /src/dist/terraform-provider-eshiam . && echo 'Wrote dist/terraform-provider-eshiam'"]
